@@ -104,7 +104,7 @@
 
     .guide-label.h3-right {
       left: calc(100% + 7px);
-      top: 43.75%;
+      top: calc(43.75% - 15px);
       transform: translateY(-50%);
       text-align: left;
     }
@@ -206,7 +206,7 @@
     .guide-line.v2 { left: 75%; }
     .guide-line.h1 { top: 12.5%; }
     .guide-line.h2 { top: 75%; }
-    .guide-line.h3 { top: 43.75%; }
+    .guide-line.h3 { top: calc(43.75% - 15px); }
 
     .preview-note {
       margin: 14px 0 0;
@@ -259,6 +259,22 @@
       background: #fff;
       color: var(--text);
       outline: none;
+    }
+
+    .reference-photo-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .reference-photo-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .reference-photo-section .member-select {
+      margin-top: 0;
     }
 
     input[type="text"]:focus,
@@ -448,9 +464,12 @@
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
           <button class="btn-primary" id="download" type="button" disabled>512×512 PNG出力</button>
-          <select class="member-select" id="memberSelect" aria-label="選手選択">
-            <option value="">選手選択</option>
-          </select>
+          <div class="reference-photo-section">
+            <h3 class="reference-photo-title">参考写真</h3>
+            <select class="member-select" id="memberSelect" aria-label="選手選択">
+              <option value="">選手選択</option>
+            </select>
+          </div>
         </section>
       </aside>
 
