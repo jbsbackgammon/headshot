@@ -102,6 +102,13 @@
       text-align: left;
     }
 
+    .guide-label.h3-right {
+      left: calc(100% + 7px);
+      top: 43.75%;
+      transform: translateY(-50%);
+      text-align: left;
+    }
+
     .guide-label.v1-bottom {
       left: 25%;
       top: calc(100% + 7px);
@@ -199,6 +206,7 @@
     .guide-line.v2 { left: 75%; }
     .guide-line.h1 { top: 12.5%; }
     .guide-line.h2 { top: 75%; }
+    .guide-line.h3 { top: 43.75%; }
 
     .preview-note {
       margin: 14px 0 0;
@@ -351,38 +359,6 @@
       letter-spacing: .02em;
     }
 
-    .output-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .output-actions .btn-primary {
-      margin-top: 0;
-    }
-
-    .btn-member {
-      width: 100%;
-      min-height: 38px;
-      border: 1px solid #111;
-      border-radius: 8px;
-      background: #fff;
-      color: #111;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .btn-member:hover:not(:disabled) {
-      background: #f3f3f3;
-    }
-
-    .btn-member:disabled {
-      opacity: .45;
-      cursor: not-allowed;
-    }
-
-
     .adjust-section .field { margin-top: 4px; }
 
     .adjust-section label {
@@ -471,10 +447,7 @@
             <input id="nameEn" type="text" placeholder="YANAGI Nobusuke" autocomplete="off">
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
-          <div class="output-actions">
-            <button class="btn-primary" id="download" type="button" disabled>PNG出力</button>
-            <button class="btn-member" id="memberPublish" type="button" disabled>member反映</button>
-          </div>
+          <button class="btn-primary" id="download" type="button" disabled>512×512 PNG出力</button>
           <select class="member-select" id="memberSelect" aria-label="選手選択">
             <option value="">選手選択</option>
           </select>
@@ -487,6 +460,7 @@
             <div class="canvas-box">
               <div class="guide-label h1-right">頭髪を考慮しない<br>想定される頭頂部</div>
               <div class="guide-label h2-right">顎</div>
+              <div class="guide-label h3-right">目</div>
               <div class="guide-label v1-bottom">耳付近</div>
               <div class="guide-label v2-bottom">耳付近</div>
               <div class="canvas-shell" id="canvasShell">
@@ -502,6 +476,7 @@
                   <span class="guide-line vertical v2"></span>
                   <span class="guide-line horizontal h1"></span>
                   <span class="guide-line horizontal h2"></span>
+                  <span class="guide-line horizontal h3"></span>
                 </div>
               </div>
             </div>
@@ -534,14 +509,10 @@
       const nameEn = document.getElementById('nameEn');
       const filenamePreview = document.getElementById('filenamePreview');
       const download = document.getElementById('download');
-      const memberPublish = document.getElementById('memberPublish');
       const memberSelect = document.getElementById('memberSelect');
       const status = document.getElementById('status');
 
       const MEMBER_DATA_URL = '/member/data/members.json';
-      const MEMBER_API_STORAGE_KEY = 'headshotMemberApiUrl';
-      const MEMBER_SESSION_STORAGE_KEY = 'headshotGithubSession';
-      const DEFAULT_MEMBER_API_URL = '';
 
       let image = null;
       let imageUrl = null;
@@ -576,228 +547,6 @@
         const filename = `${base}.png`;
         filenamePreview.textContent = filename;
         return filename;
-      }
-
-      function getMemberApiUrl() {
-        return (localStorage.getItem(MEMBER_API_STORAGE_KEY) || DEFAULT_MEMBER_API_URL || '')
-          .trim()
-          .replace(/\/+$/, '');
-      }
-
-      function ensureMemberApiUrl() {
-        let url = getMemberApiUrl();
-        if (url) return url;
-
-        const entered = window.prompt(
-          '初回設定：Cloudflare Worker のURLを入力してください。\n例：https://jbs-headshot-member.example.workers.dev'
-        );
-        if (!entered) return '';
-
-        try {
-          const parsed = new URL(entered.trim());
-          if (parsed.protocol !== 'https:') throw new Error();
-          url = parsed.origin + parsed.pathname.replace(/\/+$/, '');
-          localStorage.setItem(MEMBER_API_STORAGE_KEY, url);
-          return url;
-        } catch {
-          alert('Worker URLが正しくありません。https:// から始まるURLを入力してください。');
-          return '';
-        }
-      }
-
-      async function checkGithubSession(apiUrl, session) {
-        if (!session) return false;
-
-        try {
-          const response = await fetch(`${apiUrl}/status`, {
-            headers: { Authorization: `Bearer ${session}` },
-            cache: 'no-store'
-          });
-          return response.ok;
-        } catch {
-          return false;
-        }
-      }
-
-      function authorizeGithub(apiUrl) {
-        return new Promise((resolve, reject) => {
-          const apiOrigin = new URL(apiUrl).origin;
-          const authUrl = `${apiUrl}/auth/start`;
-          const popup = window.open(
-            authUrl,
-            'headshotGithubAuth',
-            'popup=yes,width=720,height=760'
-          );
-
-          if (!popup) {
-            reject(new Error('GitHub認可画面を開けませんでした。ポップアップを許可してください。'));
-            return;
-          }
-
-          let settled = false;
-
-          const cleanup = () => {
-            window.removeEventListener('message', onMessage);
-            clearInterval(closedTimer);
-            clearTimeout(timeoutTimer);
-          };
-
-          const finish = (callback) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            callback();
-          };
-
-          const onMessage = (event) => {
-            if (event.origin !== apiOrigin) return;
-            const data = event.data;
-            if (!data || data.type !== 'headshot-github-auth') return;
-
-            if (data.ok && data.session) {
-              finish(() => {
-                localStorage.setItem(MEMBER_SESSION_STORAGE_KEY, data.session);
-                try { popup.close(); } catch {}
-                resolve(data.session);
-              });
-              return;
-            }
-
-            finish(() => {
-              try { popup.close(); } catch {}
-              reject(new Error(data.message || 'GitHub認可に失敗しました。'));
-            });
-          };
-
-          window.addEventListener('message', onMessage);
-
-          const closedTimer = setInterval(() => {
-            if (popup.closed) {
-              finish(() => reject(new Error('GitHub認可が完了しませんでした。')));
-            }
-          }, 500);
-
-          const timeoutTimer = setTimeout(() => {
-            try { popup.close(); } catch {}
-            finish(() => reject(new Error('GitHub認可がタイムアウトしました。')));
-          }, 5 * 60 * 1000);
-        });
-      }
-
-      async function ensureGithubSession(apiUrl) {
-        const saved = localStorage.getItem(MEMBER_SESSION_STORAGE_KEY) || '';
-        if (await checkGithubSession(apiUrl, saved)) return saved;
-
-        localStorage.removeItem(MEMBER_SESSION_STORAGE_KEY);
-        return authorizeGithub(apiUrl);
-      }
-
-      function canvasPngBlob() {
-        return new Promise((resolve, reject) => {
-          render();
-          preview.toBlob(blob => {
-            if (blob) resolve(blob);
-            else reject(new Error('PNGの生成に失敗しました。'));
-          }, 'image/png');
-        });
-      }
-
-      function blobToBase64(blob) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = String(reader.result || '');
-            const comma = result.indexOf(',');
-            resolve(comma >= 0 ? result.slice(comma + 1) : result);
-          };
-          reader.onerror = () => reject(new Error('PNGの読込に失敗しました。'));
-          reader.readAsDataURL(blob);
-        });
-      }
-
-      async function sendMemberPublish(apiUrl, session, payload) {
-        return fetch(`${apiUrl}/publish`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session}`
-          },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      async function publishToMember() {
-        if (!image) return;
-
-        const ja = sanitizePart(nameJa.value);
-        const en = sanitizePart(nameEn.value);
-        if (!ja || !en) {
-          setStatus('member反映には日本語名・英語名の両方を入力してください。', true);
-          return;
-        }
-
-        const apiUrl = ensureMemberApiUrl();
-        if (!apiUrl) return;
-
-        memberPublish.disabled = true;
-        const originalText = memberPublish.textContent;
-        memberPublish.textContent = '認証中…';
-
-        try {
-          const session = await ensureGithubSession(apiUrl);
-          memberPublish.textContent = '反映中…';
-
-          const filename = buildFilename();
-          const blob = await canvasPngBlob();
-          const contentBase64 = await blobToBase64(blob);
-
-          let response = await sendMemberPublish(apiUrl, session, {
-            filename,
-            contentBase64,
-            overwrite: false
-          });
-
-          if (response.status === 401) {
-            localStorage.removeItem(MEMBER_SESSION_STORAGE_KEY);
-            const renewedSession = await authorizeGithub(apiUrl);
-            response = await sendMemberPublish(apiUrl, renewedSession, {
-              filename,
-              contentBase64,
-              overwrite: false
-            });
-          }
-
-          if (response.status === 409) {
-            const confirmed = window.confirm(
-              `${filename} は member/images/ にすでに存在します。\n上書きしますか？`
-            );
-            if (!confirmed) {
-              setStatus('member反映をキャンセルしました。');
-              return;
-            }
-
-            const activeSession = localStorage.getItem(MEMBER_SESSION_STORAGE_KEY) || session;
-            response = await sendMemberPublish(apiUrl, activeSession, {
-              filename,
-              contentBase64,
-              overwrite: true
-            });
-          }
-
-          const data = await response.json().catch(() => ({}));
-
-          if (!response.ok) {
-            throw new Error(data.message || `member反映に失敗しました (${response.status})`);
-          }
-
-          setStatus(`member/images/${filename} に反映しました。`);
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message || 'member反映に失敗しました。', true);
-        } finally {
-          memberPublish.textContent = originalText;
-          memberPublish.disabled = !image;
-        }
       }
 
       function memberAssetUrl(path) {
@@ -959,8 +708,7 @@
       }
 
       function setControlsEnabled(enabled) {
-        [zoom, resetPosition, moveUp, moveDown, moveLeft, moveRight, download, memberPublish]
-          .forEach(el => el.disabled = !enabled);
+        [zoom, resetPosition, moveUp, moveDown, moveLeft, moveRight, download].forEach(el => el.disabled = !enabled);
       }
 
       function setInitialCover() {
@@ -1212,11 +960,14 @@
       canvasShell.addEventListener('pointerup', endPointer);
       canvasShell.addEventListener('pointercancel', endPointer);
 
-      download.addEventListener('click', async () => {
+      download.addEventListener('click', () => {
         if (!image) return;
-
-        try {
-          const blob = await canvasPngBlob();
+        render();
+        preview.toBlob((blob) => {
+          if (!blob) {
+            setStatus('PNGの生成に失敗しました。', true);
+            return;
+          }
           const link = document.createElement('a');
           const objectUrl = URL.createObjectURL(blob);
           link.href = objectUrl;
@@ -1226,13 +977,8 @@
           link.remove();
           setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
           setStatus('512×512pxのPNGを書き出しました。');
-        } catch (error) {
-          console.error(error);
-          setStatus(error.message || 'PNGの生成に失敗しました。', true);
-        }
+        }, 'image/png');
       });
-
-      memberPublish.addEventListener('click', publishToMember);
 
       setControlsEnabled(false);
       loadMemberList();
