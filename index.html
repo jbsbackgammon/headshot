@@ -370,22 +370,6 @@
       font-size: 13px;
     }
 
-    .adjust-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
-      margin-top: 5px;
-    }
-
-    .adjust-actions .btn-line {
-      min-height: 32px;
-      margin-top: 0;
-      padding: 4px 5px;
-      border-radius: 8px;
-      font-size: 11px;
-      line-height: 1.25;
-    }
-
     .helper {
       margin: 9px 0 0;
       color: var(--muted);
@@ -441,11 +425,6 @@
             <button class="btn-subtle" id="resetPosition" type="button" aria-label="初期位置に戻す">●</button>
             <button class="btn-subtle" id="moveRight" type="button" aria-label="右へ">→</button>
             <button class="btn-subtle" id="moveDown" type="button" aria-label="下へ">↓</button>
-          </div>
-
-          <div class="adjust-actions">
-            <button class="btn-line" id="autoPosition" type="button" disabled>顔を自動配置</button>
-            <button class="btn-line" id="resetAll" type="button" disabled>位置・大きさを初期化</button>
           </div>
         </section>
 
@@ -511,8 +490,6 @@
       const fileInput = document.getElementById('fileInput');
       const zoom = document.getElementById('zoom');
       const zoomValue = document.getElementById('zoomValue');
-      const autoPosition = document.getElementById('autoPosition');
-      const resetAll = document.getElementById('resetAll');
       const resetPosition = document.getElementById('resetPosition');
       const moveUp = document.getElementById('moveUp');
       const moveDown = document.getElementById('moveDown');
@@ -721,8 +698,7 @@
       }
 
       function setControlsEnabled(enabled) {
-        [zoom, resetAll, resetPosition, moveUp, moveDown, moveLeft, moveRight, download].forEach(el => el.disabled = !enabled);
-        autoPosition.disabled = !enabled || !hasFaceDetector;
+        [zoom, resetPosition, moveUp, moveDown, moveLeft, moveRight, download].forEach(el => el.disabled = !enabled);
       }
 
       function setInitialCover() {
@@ -897,8 +873,6 @@
       });
 
       zoom.addEventListener('input', () => setZoom(Number(zoom.value) / 100));
-      autoPosition.addEventListener('click', () => tryAutoPosition({ updateDefault: false }));
-      resetAll.addEventListener('click', restoreDefault);
       resetPosition.addEventListener('click', () => { offsetX = defaultState?.offsetX ?? 0; offsetY = defaultState?.offsetY ?? 0; render(); });
       moveUp.addEventListener('click', () => move(0, -MOVE_STEP));
       moveDown.addEventListener('click', () => move(0, MOVE_STEP));
@@ -998,10 +972,6 @@
 
       setControlsEnabled(false);
       loadMemberList();
-
-      if (!hasFaceDetector) {
-        autoPosition.title = 'このブラウザはFaceDetector APIに対応していません';
-      }
     })();
   </script>
 </body>
