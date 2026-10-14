@@ -29,7 +29,7 @@
       color: var(--text);
     }
 
-    button, input { font: inherit; }
+    button, input, select { font: inherit; }
 
     .app {
       width: min(1180px, calc(100% - 32px));
@@ -241,8 +241,21 @@
       outline: none;
     }
 
+    .member-select {
+      width: 100%;
+      height: 38px;
+      margin-top: 8px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+    }
+
     input[type="text"]:focus,
     input[type="range"]:focus-visible,
+    select:focus-visible,
     button:focus-visible {
       outline: 3px solid rgba(215, 17, 97, .18);
       outline-offset: 2px;
@@ -448,6 +461,9 @@
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
           <button class="btn-primary" id="download" type="button" disabled>512×512 PNG出力</button>
+          <select class="member-select" id="memberSelect" aria-label="選手選択">
+            <option value="">選手選択</option>
+          </select>
         </section>
       </aside>
 
@@ -506,7 +522,10 @@
       const nameEn = document.getElementById('nameEn');
       const filenamePreview = document.getElementById('filenamePreview');
       const download = document.getElementById('download');
+      const memberSelect = document.getElementById('memberSelect');
       const status = document.getElementById('status');
+
+      const MEMBER_DATA_URL = '/member/data/members.json';
 
       let image = null;
       let imageUrl = null;
@@ -541,6 +560,95 @@
         const filename = `${base}.png`;
         filenamePreview.textContent = filename;
         return filename;
+      }
+
+      function memberAssetUrl(path) {
+        const encodedPath = String(path || '')
+          .split('/')
+          .filter(Boolean)
+          .map(part => encodeURIComponent(part))
+          .join('/');
+        return `/member/${encodedPath}`;
+      }
+
+      async function loadMemberList() {
+        memberSelect.disabled = true;
+
+        try {
+          const response = await fetch(MEMBER_DATA_URL, { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error(`選手一覧の取得に失敗しました (${response.status})`);
+          }
+
+          const data = await response.json();
+          const source = Array.isArray(data) ? data : data?.members;
+          if (!Array.isArray(source)) {
+            throw new Error('選手一覧の形式が正しくありません。');
+          }
+
+          const members = source
+            .filter(member => member?.name && member?.nameEn && member?.photo)
+            .sort((a, b) => {
+              const aJapanese = /[\u3040-\u30ff\u3400-\u9fff]/.test(a.name);
+              const bJapanese = /[\u3040-\u30ff\u3400-\u9fff]/.test(b.name);
+              if (aJapanese !== bJapanese) return aJapanese ? -1 : 1;
+              return String(a.nameEn).localeCompare(String(b.nameEn), 'en', {
+                sensitivity: 'base',
+                numeric: true
+              });
+            });
+
+          const fragment = document.createDocumentFragment();
+          members.forEach(member => {
+            const option = document.createElement('option');
+            option.value = JSON.stringify({
+              name: member.name,
+              nameEn: member.nameEn,
+              photo: member.photo
+            });
+            option.textContent = `${member.name} / ${member.nameEn}`;
+            fragment.appendChild(option);
+          });
+
+          memberSelect.appendChild(fragment);
+          memberSelect.disabled = false;
+        } catch (error) {
+          console.error(error);
+          memberSelect.innerHTML = '<option value="">選手一覧を取得できません</option>';
+          memberSelect.disabled = true;
+        }
+      }
+
+      function loadMemberImage(member) {
+        if (!member?.photo) return;
+
+        if (imageUrl) {
+          URL.revokeObjectURL(imageUrl);
+          imageUrl = null;
+        }
+
+        const nextImage = new Image();
+
+        nextImage.onload = () => {
+          image = nextImage;
+          emptyState.hidden = true;
+          setControlsEnabled(true);
+          setInitialCover();
+          storeDefault();
+
+          nameJa.value = member.name || '';
+          nameEn.value = member.nameEn || '';
+          buildFilename();
+
+          fileInput.value = '';
+          setStatus(`${member.name} の登録写真を読み込みました。`);
+        };
+
+        nextImage.onerror = () => {
+          setStatus('選手写真を読み込めませんでした。', true);
+        };
+
+        nextImage.src = memberAssetUrl(member.photo);
       }
 
       function getDrawState() {
@@ -750,7 +858,19 @@
       }
 
       fileInput.addEventListener('change', () => {
+        memberSelect.value = '';
         loadImageFile(fileInput.files?.[0]);
+      });
+
+      memberSelect.addEventListener('change', () => {
+        if (!memberSelect.value) return;
+
+        try {
+          loadMemberImage(JSON.parse(memberSelect.value));
+        } catch (error) {
+          console.error(error);
+          setStatus('選手写真の読込に失敗しました。', true);
+        }
       });
 
       ['dragenter', 'dragover'].forEach(type => {
@@ -772,6 +892,7 @@
 
       canvasShell.addEventListener('drop', (event) => {
         const file = event.dataTransfer?.files?.[0];
+        memberSelect.value = '';
         loadImageFile(file);
       });
 
@@ -876,6 +997,8 @@
       });
 
       setControlsEnabled(false);
+      loadMemberList();
+
       if (!hasFaceDetector) {
         autoPosition.title = 'このブラウザはFaceDetector APIに対応していません';
       }
