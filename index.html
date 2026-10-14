@@ -123,6 +123,13 @@
       text-align: center;
     }
 
+    .guide-label.v3-bottom {
+      left: 50%;
+      top: calc(100% + 7px);
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
     .canvas-shell {
       position: relative;
       width: 100%;
@@ -204,6 +211,7 @@
 
     .guide-line.v1 { left: 25%; }
     .guide-line.v2 { left: 75%; }
+    .guide-line.v3 { left: 50%; }
     .guide-line.h1 { top: 12.5%; }
     .guide-line.h2 { top: 75%; }
     .guide-line.h3 { top: calc(43.75% - 15px); }
@@ -482,6 +490,7 @@
               <div class="guide-label h3-right">目</div>
               <div class="guide-label v1-bottom">耳付近</div>
               <div class="guide-label v2-bottom">耳付近</div>
+              <div class="guide-label v3-bottom">中央</div>
               <div class="canvas-shell" id="canvasShell">
                 <canvas id="preview" width="512" height="512"></canvas>
                 <div class="empty-state" id="emptyState">
@@ -493,6 +502,7 @@
                 <div class="guide" id="guide" aria-hidden="true">
                   <span class="guide-line vertical v1"></span>
                   <span class="guide-line vertical v2"></span>
+                  <span class="guide-line vertical v3"></span>
                   <span class="guide-line horizontal h1"></span>
                   <span class="guide-line horizontal h2"></span>
                   <span class="guide-line horizontal h3"></span>
