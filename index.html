@@ -5,210 +5,120 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow">
   <title>選手画像作成</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&amp;display=swap">
+  <link rel="stylesheet" href="https://jbsbackgammon.github.io/common/ui.css">
   <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4f5f7;
-      --panel: #ffffff;
-      --text: #17191d;
-      --muted: #6c727f;
-      --line: #d8dce3;
-      --soft: #eef0f4;
-      --accent: #d71161;
-      --danger: #b42318;
-      --shadow: 0 12px 36px rgba(22, 28, 45, .08);
-    }
-
+    /* Shared controls and design tokens live in common/ui.css.
+       Only the photo editor's layout, canvas and guides are defined here. */
+    :root { color-scheme: light; }
     * { box-sizing: border-box; }
-
     html, body { margin: 0; min-height: 100%; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    button, input, select { font: inherit; }
-
     .app {
-      width: min(1180px, calc(100% - 32px));
+      width: min(var(--width-content-max), calc(100% - 2 * var(--space-16)));
       margin: 0 auto;
-      padding: 28px 0 44px;
+      padding: var(--space-24) 0;
     }
 
     .workspace {
       display: grid;
-      grid-template-columns: 340px minmax(360px, 1fr);
-      gap: 16px;
-      align-items: stretch;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: var(--space-16);
+      align-items: start;
     }
 
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-    }
-
-    .preview-panel { padding: 12px 8px; }
     .control-panel {
-      padding: 14px;
       position: sticky;
-      top: 16px;
-      align-self: stretch;
-      height: 100%;
+      top: var(--space-16);
+      padding: var(--space-16);
+      min-width: 0;
     }
 
-    .preview-wrap {
-      width: 100%;
-      max-width: 780px;
-      margin: 0 auto;
-    }
-
-    .guide-stage {
-      position: relative;
-      width: 100%;
-      padding: 12px 108px 32px 6px;
-    }
-
-    .canvas-box {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 1;
-    }
+    .jbsui .preview-panel { align-self: stretch; }
+    .preview-wrap { width: 100%; max-width: 780px; margin: 0 auto; }
+    .guide-stage { position: relative; width: 100%; padding: var(--space-12) 124px var(--space-24) var(--space-4); }
+    .canvas-box { position: relative; width: 100%; aspect-ratio: 1; }
 
     .guide-label {
       position: absolute;
       z-index: 3;
-      color: var(--muted);
-      font-size: 10px;
+      color: var(--color-45);
+      font-size: var(--font-size-12);
       line-height: 1.25;
       pointer-events: none;
       white-space: nowrap;
     }
-
-    .guide-label.h1-right {
-      left: calc(100% + 7px);
-      top: 12.5%;
+    .guide-label.h1-right, .guide-label.h2-right, .guide-label.h3-right {
+      left: calc(100% + var(--space-8));
       transform: translateY(-50%);
       text-align: left;
     }
-
-    .guide-label.h2-right {
-      left: calc(100% + 7px);
-      top: 75%;
-      transform: translateY(-50%);
-      text-align: left;
-    }
-
-    .guide-label.h3-right {
-      left: calc(100% + 7px);
-      top: calc(43.75% - 15px);
-      transform: translateY(-50%);
-      text-align: left;
-    }
-
-    .guide-label.v1-bottom {
-      left: 25%;
-      top: calc(100% + 7px);
+    .guide-label.h1-right { top: 12.5%; }
+    .guide-label.h2-right { top: 75%; }
+    .guide-label.h3-right { top: calc(43.75% - 15px); }
+    .guide-label.v1-bottom, .guide-label.v2-bottom, .guide-label.v3-bottom {
+      top: calc(100% + var(--space-8));
       transform: translateX(-50%);
       text-align: center;
     }
-
-    .guide-label.v2-bottom {
-      left: 75%;
-      top: calc(100% + 7px);
-      transform: translateX(-50%);
-      text-align: center;
-    }
-
-    .guide-label.v3-bottom {
-      left: 50%;
-      top: calc(100% + 7px);
-      transform: translateX(-50%);
-      text-align: center;
-    }
+    .guide-label.v1-bottom { left: 25%; }
+    .guide-label.v2-bottom { left: 75%; }
+    .guide-label.v3-bottom { left: 50%; }
 
     .canvas-shell {
       position: relative;
       width: 100%;
       aspect-ratio: 1;
       overflow: hidden;
-      border: 1px solid #bfc5cf;
+      border: var(--width-border) solid var(--color-85);
       background:
-        linear-gradient(45deg, #f0f1f3 25%, transparent 25%),
-        linear-gradient(-45deg, #f0f1f3 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #f0f1f3 75%),
-        linear-gradient(-45deg, transparent 75%, #f0f1f3 75%),
-        #fff;
+        linear-gradient(45deg, var(--color-95) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--color-95) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--color-95) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--color-95) 75%),
+        var(--color-100);
       background-size: 24px 24px;
       background-position: 0 0, 0 12px, 12px -12px, -12px 0;
       cursor: grab;
       user-select: none;
       touch-action: none;
     }
-
     .canvas-shell.dragging { cursor: grabbing; }
-
     .canvas-shell.file-dragover {
-      border-color: var(--accent);
-      box-shadow: inset 0 0 0 3px rgba(215, 17, 97, .12);
+      border-color: var(--color-pink);
+      box-shadow: inset 0 0 0 var(--width-focus-ring) color-mix(in srgb, var(--color-pink) 12%, transparent);
     }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
+    canvas { display: block; width: 100%; height: 100%; }
     .empty-state {
       position: absolute;
       inset: 0;
       display: grid;
       place-items: center;
-      padding: 28px;
+      padding: var(--space-16);
       text-align: center;
-      color: var(--muted);
+      color: var(--color-45);
+      font-size: var(--font-size-14);
       pointer-events: none;
     }
-
-
-    .empty-state[hidden] {
-      display: none !important;
-    }
-
+    .empty-state[hidden] { display: none !important; }
     .empty-state strong {
       display: block;
-      color: var(--text);
-      font-size: 18px;
-      margin-bottom: 8px;
+      color: var(--color-25);
+      font-size: var(--font-size-16);
+      font-weight: var(--font-weight-action);
+      margin-bottom: var(--space-8);
     }
 
-    .guide {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-
+    .guide { position: absolute; inset: 0; pointer-events: none; }
     .guide-line {
       position: absolute;
-      background: rgba(215, 17, 97, .88);
+      background: color-mix(in srgb, var(--color-pink) 88%, transparent);
       pointer-events: none;
     }
-
-    .guide-line.vertical {
-      top: 0;
-      bottom: 0;
-      width: 1px;
-    }
-
-    .guide-line.horizontal {
-      left: 0;
-      right: 0;
-      height: 1px;
-    }
-
+    .guide-line.vertical { top: 0; bottom: 0; width: var(--width-border); }
+    .guide-line.horizontal { left: 0; right: 0; height: var(--width-border); }
     .guide-line.v1 { left: 25%; }
     .guide-line.v2 { left: 75%; }
     .guide-line.v3 { left: 50%; }
@@ -216,237 +126,101 @@
     .guide-line.h2 { top: 75%; }
     .guide-line.h3 { top: calc(43.75% - 15px); }
 
-    .preview-note {
-      margin: 14px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-      text-align: center;
+    .section + .section, .reference-photo-section {
+      border-top: var(--width-border) solid var(--color-85);
+      margin-top: var(--space-12);
+      padding-top: var(--space-12);
     }
-
-    .section + .section {
-      border-top: 1px solid var(--line);
-      margin-top: 12px;
-      padding-top: 12px;
+    .section-title, .reference-photo-title {
+      margin: 0 0 var(--space-8);
+      font-size: var(--font-size-14);
+      font-weight: var(--font-weight-action);
     }
-
-    .section-title {
-      margin: 0 0 8px;
-      font-size: 14px;
-      font-weight: 700;
+    .jbsui .field + .field { margin-top: var(--space-8); }
+    .jbsui .file-picker { position: relative; }
+    .file-picker:has(input:focus-visible) {
+      outline: var(--width-focus-ring) solid var(--color-60);
+      outline-offset: var(--width-focus-ring);
     }
-
-    .field { margin-top: 8px; }
-    .field:first-of-type { margin-top: 0; }
-
-    label {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    input[type="text"] {
-      width: 100%;
-      height: 38px;
-      padding: 0 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      color: var(--text);
-      outline: none;
-    }
-
-    .member-select {
-      width: 100%;
-      height: 38px;
-      margin-top: 8px;
-      padding: 0 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      color: var(--text);
-      outline: none;
-    }
-
-    .reference-photo-section {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
-    }
-
-    .reference-photo-title {
-      margin: 0 0 8px;
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .reference-photo-section .member-select {
-      margin-top: 0;
-    }
-
-    input[type="text"]:focus,
-    input[type="range"]:focus-visible,
-    select:focus-visible,
-    button:focus-visible {
-      outline: 3px solid rgba(215, 17, 97, .18);
-      outline-offset: 2px;
-    }
-
-    .file-input {
-      width: 100%;
-      padding: 8px;
-      border: 1px dashed #b9bfca;
-      border-radius: 8px;
-      background: #fafbfc;
-      font-size: 12px;
-    }
-
     .filename {
-      margin-top: 6px;
-      padding: 7px 9px;
-      min-height: 34px;
-      border-radius: 8px;
-      background: var(--soft);
-      color: #4b515c;
-      font-size: 12px;
+      margin-top: var(--space-8);
+      padding: var(--space-8);
+      min-height: var(--height-input);
+      border-radius: var(--radius);
+      background: var(--color-95);
+      color: var(--color-45);
+      font-size: var(--font-size-12);
       line-height: 1.45;
-      word-break: break-all;
+      overflow-wrap: anywhere;
     }
-
     .zoom-row {
       display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 6px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-8);
       align-items: center;
     }
-
-    input[type="range"] { width: 100%; }
-
+    #zoom { accent-color: var(--color-25); }
     .zoom-value {
       min-width: 48px;
       text-align: right;
       font-variant-numeric: tabular-nums;
-      font-size: 13px;
-      color: var(--muted);
+      font-size: var(--font-size-14);
+      color: var(--color-45);
     }
-
     .pad {
       display: grid;
-      grid-template-columns: repeat(3, 38px);
-      grid-template-rows: repeat(3, 30px);
+      grid-template-columns: repeat(3, var(--height-button));
+      grid-template-rows: repeat(3, var(--height-button));
       justify-content: center;
-      gap: 4px;
-      margin: 6px 0 2px;
+      gap: var(--space-4);
+      margin-top: var(--space-4);
     }
-
+    .jbsui .pad .jbsui-button { padding: 0; }
     .pad button:nth-child(1) { grid-column: 2; grid-row: 1; }
     .pad button:nth-child(2) { grid-column: 1; grid-row: 2; }
     .pad button:nth-child(3) { grid-column: 2; grid-row: 2; }
     .pad button:nth-child(4) { grid-column: 3; grid-row: 2; }
     .pad button:nth-child(5) { grid-column: 2; grid-row: 3; }
-
-    button {
-      border: 0;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: transform .06s ease, opacity .15s ease, background .15s ease;
-    }
-
-    button:active { transform: translateY(1px); }
-    button:disabled { cursor: not-allowed; opacity: .45; }
-
-    .btn-subtle {
-      background: var(--soft);
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .btn-line {
-      width: 100%;
-      min-height: 32px;
-      margin-top: 6px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .btn-primary {
-      width: 100%;
-      min-height: 42px;
-      margin-top: 8px;
-      background: var(--accent);
-      color: #fff;
-      font-size: 14px;
-      font-weight: 800;
-      letter-spacing: .02em;
-    }
-
-    .adjust-section .field { margin-top: 4px; }
-
-    .adjust-section label {
-      margin-bottom: 4px;
-      font-size: 12px;
-    }
-
-    .adjust-section .pad {
-      grid-template-columns: repeat(3, 38px);
-      grid-template-rows: repeat(3, 30px);
-      gap: 4px;
-      margin: 5px 0 2px;
-    }
-
-    .adjust-section .btn-subtle {
-      border-radius: 8px;
-      font-size: 13px;
-    }
-
-    .helper {
-      margin: 9px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.55;
-    }
+    #download { width: 100%; margin-top: var(--space-8); }
 
     .status {
-      margin-top: 5px;
-      min-height: 0;
-      color: var(--muted);
-      font-size: 12px;
+      margin-top: var(--space-4);
+      color: var(--color-45);
+      font-size: var(--font-size-12);
       line-height: 1.55;
+      overflow-wrap: anywhere;
     }
-
     .status:empty { display: none; }
-    .status.error { color: var(--danger); }
+    .status.error { color: #b42318; }
 
     @media (max-width: 820px) {
-      .app { width: min(100% - 20px, 680px); padding-top: 18px; }
-      .workspace { grid-template-columns: 1fr; }
-      .control-panel { position: static; height: auto; }
-      .preview-panel { padding: 10px 6px; border-radius: 14px; }
-      .control-panel { padding: 12px; border-radius: 14px; }
-      .guide-stage { padding: 10px 96px 30px 4px; }
-      .guide-label { font-size: 9px; }
+      .app { width: min(calc(100% - 2 * var(--space-12)), 680px); padding-top: var(--space-16); }
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .control-panel { position: static; padding: var(--space-12); }
+      .jbsui .preview-panel { padding: var(--space-8); }
     }
   </style>
   <link rel="icon" href="https://jbsbackgammon.github.io/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="https://jbsbackgammon.github.io/favicon-32x32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="https://jbsbackgammon.github.io/apple-touch-icon.png">
 </head>
-<body>
+<body class="jbsui">
   <main class="app">
     <div class="workspace">
-      <aside class="panel control-panel">
+      <aside class="control-panel">
         <section class="section">
           <h2 class="section-title">1. 元写真アップロード</h2>
-          <input class="file-input" id="fileInput" type="file" accept="image/*">
+          <div class="file-picker jbsui-file-picker">
+            <input class="jbsui-file-input" id="fileInput" type="file" accept="image/*" aria-label="元写真を選択">
+            <label class="jbsui-file-button" for="fileInput">ファイル選択</label>
+            <span class="jbsui-file-status" id="fileStatus">未選択</span>
+          </div>
           <div class="status" id="status" aria-live="polite"></div>
         </section>
 
         <section class="section adjust-section">
           <h2 class="section-title">2. 位置・大きさ調整</h2>
-          <div class="field">
+          <div class="field jbsui-field">
             <label for="zoom">拡大縮小</label>
             <div class="zoom-row">
               <input id="zoom" type="range" min="50" max="1000" value="100" step="1" disabled>
@@ -455,36 +229,36 @@
           </div>
 
           <div class="pad" aria-label="画像位置調整">
-            <button class="btn-subtle" id="moveUp" type="button" aria-label="上へ">↑</button>
-            <button class="btn-subtle" id="moveLeft" type="button" aria-label="左へ">←</button>
-            <button class="btn-subtle" id="resetPosition" type="button" aria-label="初期位置に戻す">●</button>
-            <button class="btn-subtle" id="moveRight" type="button" aria-label="右へ">→</button>
-            <button class="btn-subtle" id="moveDown" type="button" aria-label="下へ">↓</button>
+            <button class="jbsui-button" id="moveUp" type="button" aria-label="上へ">↑</button>
+            <button class="jbsui-button" id="moveLeft" type="button" aria-label="左へ">←</button>
+            <button class="jbsui-button" id="resetPosition" type="button" aria-label="初期位置に戻す">●</button>
+            <button class="jbsui-button" id="moveRight" type="button" aria-label="右へ">→</button>
+            <button class="jbsui-button" id="moveDown" type="button" aria-label="下へ">↓</button>
           </div>
         </section>
 
         <section class="section">
           <h2 class="section-title">3. 顔写真出力</h2>
-          <div class="field">
+          <div class="field jbsui-field">
             <label for="nameJa">日本語名</label>
             <input id="nameJa" type="text" placeholder="柳 暢祐" autocomplete="off">
           </div>
-          <div class="field">
+          <div class="field jbsui-field">
             <label for="nameEn">英語名</label>
             <input id="nameEn" type="text" placeholder="YANAGI Nobusuke" autocomplete="off">
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
-          <button class="btn-primary" id="download" type="button" disabled>512×512 PNG出力</button>
+          <button class="jbsui-button jbsui-button--primary jbsui-button--primary-action" id="download" type="button" disabled>512×512 PNG出力</button>
           <div class="reference-photo-section">
             <h3 class="reference-photo-title">参考写真</h3>
-            <select class="member-select" id="memberSelect" aria-label="選手選択">
+            <select class="jbsui-select" id="memberSelect" aria-label="選手選択">
               <option value="">選手選択</option>
             </select>
           </div>
         </section>
       </aside>
 
-      <section class="panel preview-panel" aria-label="画像プレビュー">
+      <section class="preview-panel jbsui-preview" aria-label="画像プレビュー">
         <div class="preview-wrap">
           <div class="guide-stage">
             <div class="canvas-box">
@@ -530,6 +304,7 @@
       const canvasShell = document.getElementById('canvasShell');
       const emptyState = document.getElementById('emptyState');
       const fileInput = document.getElementById('fileInput');
+      const fileStatus = document.getElementById('fileStatus');
       const zoom = document.getElementById('zoom');
       const zoomValue = document.getElementById('zoomValue');
       const resetPosition = document.getElementById('resetPosition');
@@ -660,6 +435,7 @@
           buildFilename();
 
           fileInput.value = '';
+          fileStatus.textContent = '未選択';
           setStatus(`${member.name} の登録写真を読み込みました。`);
         };
 
@@ -848,6 +624,7 @@
 
       async function loadImageFile(file) {
         if (!file) return;
+        fileStatus.textContent = file.name;
         if (file.type && !file.type.startsWith('image/')) {
           setStatus('画像ファイルを選択してください。', true);
           return;
@@ -910,6 +687,7 @@
 
       canvasShell.addEventListener('drop', (event) => {
         const file = event.dataTransfer?.files?.[0];
+        if (file) fileInput.value = '';
         memberSelect.value = '';
         loadImageFile(file);
       });
@@ -1012,6 +790,11 @@
         }, 'image/png');
       });
 
+      // Use the shared keyboard-only focus ring.
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Tab') document.documentElement.setAttribute('data-jbsui-keyboard-focus', '');
+      });
+      document.addEventListener('pointerdown', () => document.documentElement.removeAttribute('data-jbsui-keyboard-focus'));
       setControlsEnabled(false);
       loadMemberList();
     })();
