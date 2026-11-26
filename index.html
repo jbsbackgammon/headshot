@@ -137,6 +137,11 @@
       font-weight: var(--font-weight-action);
     }
     .jbsui .field + .field { margin-top: var(--space-8); }
+    .jbsui #nameJa::placeholder,
+    .jbsui #nameEn::placeholder {
+      color: var(--color-95);
+      opacity: 1;
+    }
     .file-picker {
       display: grid;
       justify-items: start;
@@ -233,12 +238,10 @@
         <section class="section">
           <h2 class="section-title">3. 顔写真出力</h2>
           <div class="field jbsui-field">
-            <label for="nameJa">日本語名</label>
-            <input id="nameJa" type="text" autocomplete="off">
+            <input id="nameJa" type="text" placeholder="日本語名" aria-label="日本語名" autocomplete="off">
           </div>
           <div class="field jbsui-field">
-            <label for="nameEn">英語名</label>
-            <input id="nameEn" type="text" autocomplete="off">
+            <input id="nameEn" type="text" placeholder="英語名" aria-label="英語名" autocomplete="off">
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
           <button class="jbsui-button jbsui-button--primary jbsui-button--primary-action" id="download" type="button" disabled>512×512 PNG出力</button>
