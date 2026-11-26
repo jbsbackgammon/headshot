@@ -290,7 +290,9 @@
     (() => {
       const SIZE = 512;
       const MOVE_STEP = 12;
-      const TARGET = { x: SIZE / 4, y: SIZE / 8, w: SIZE / 2, h: SIZE * 5 / 8 };
+      const MEDIAPIPE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
+      const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+      const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
       const preview = document.getElementById('preview');
       const ctx = preview.getContext('2d', { alpha: true });
@@ -325,7 +327,31 @@
       let pinchStart = null;
       const pointers = new Map();
 
-      const hasFaceDetector = 'FaceDetector' in window;
+      let landmarkerPromise = null;
+      let loadRevision = 0;
+      let editRevision = 0;
+
+      function getLandmarker() {
+        if (!landmarkerPromise) {
+          landmarkerPromise = (async () => {
+            const { FilesetResolver, FaceLandmarker } = await import(MEDIAPIPE_CDN + '/vision_bundle.mjs');
+            const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_CDN + '/wasm');
+            return FaceLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'CPU' },
+              runningMode: 'IMAGE',
+              numFaces: 8,
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              outputFaceBlendshapes: false,
+              outputFacialTransformationMatrixes: false
+            });
+          })().catch(error => {
+            landmarkerPromise = null;
+            throw error;
+          });
+        }
+        return landmarkerPromise;
+      }
 
       function sanitizePart(value) {
         return value
@@ -402,6 +428,7 @@
 
       function loadMemberImage(member) {
         if (!member?.photo) return;
+        const revision = ++loadRevision;
 
         if (imageUrl) {
           URL.revokeObjectURL(imageUrl);
@@ -411,6 +438,7 @@
         const nextImage = new Image();
 
         nextImage.onload = () => {
+          if (revision !== loadRevision) return;
           image = nextImage;
           emptyState.hidden = true;
           setControlsEnabled(true);
@@ -426,7 +454,7 @@
         };
 
         nextImage.onerror = (error) => {
-          console.error('選手写真を読み込めませんでした。', error);
+          if (revision === loadRevision) console.error('選手写真を読み込めませんでした。', error);
         };
 
         nextImage.src = memberAssetUrl(member.photo);
@@ -516,54 +544,94 @@
         render();
       }
 
-      async function tryAutoPosition({ updateDefault = false } = {}) {
-        if (!image || !hasFaceDetector) {
-          return false;
-        }
+      // Coordinates returned by the model are normalized to the input image.
+      // Detect on a bounded-size copy; keep the original for full-quality output.
+      function detectionInput(source) {
+        const ratio = Math.min(1, 1600 / Math.max(source.naturalWidth, source.naturalHeight));
+        if (ratio === 1) return source;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(source.naturalWidth * ratio));
+        canvas.height = Math.max(1, Math.round(source.naturalHeight * ratio));
+        canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+        return canvas;
+      }
 
+      function faceGeometry(points, width, height) {
+        if (!points || points.length <= 454) return null;
+        const oval = FACE_OVAL.map(index => points[index]);
+        if (oval.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
+        const left = Math.min(...oval.map(p => p.x)) * width;
+        const right = Math.max(...oval.map(p => p.x)) * width;
+        const top = Math.min(...oval.map(p => p.y)) * height;
+        const chin = points[152].y * height;
+        const faceWidth = right - left;
+        const faceHeight = chin - top;
+        if (!(faceWidth > 0 && faceHeight > 0)) return null;
+        return {
+          centerX: (left + right) / 2,
+          chin,
+          width: faceWidth,
+          height: faceHeight,
+          // Facial landmarks do not include hair: estimate the crown conservatively.
+          crown: top - faceHeight * 0.22,
+          area: faceWidth * faceHeight
+        };
+      }
+
+      function calculatePlacement(face, width, height, upperGuideY) {
+        const chinY = SIZE * 0.75;
+        const coverScale = Math.max(SIZE / width, SIZE / height);
+        const widthScale = (SIZE * 0.5) / face.width;
+        const heightScale = (chinY - upperGuideY) / (face.chin - face.crown);
+        const scale = Math.max(coverScale, Math.min(widthScale, heightScale));
+        const w = width * scale;
+        const h = height * scale;
+        return {
+          scale,
+          x: Math.max(-(w - SIZE) / 2, Math.min((w - SIZE) / 2, SIZE / 2 - face.centerX * scale - (SIZE - w) / 2)),
+          y: Math.max(-(h - SIZE) / 2, Math.min((h - SIZE) / 2, chinY - face.chin * scale - (SIZE - h) / 2))
+        };
+      }
+
+      async function tryAutoPosition(source, revision, edits) {
+        const isCurrent = () => image === source && loadRevision === revision && editRevision === edits;
         try {
-          const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 8 });
-          const faces = await detector.detect(image);
-          if (!faces.length) {
-            return false;
-          }
+          const detector = await getLandmarker();
+          if (!isCurrent()) return false;
+          const result = detector.detect(detectionInput(source));
+          const width = source.naturalWidth;
+          const height = source.naturalHeight;
+          const faces = (result.faceLandmarks || [])
+            .map(points => faceGeometry(points, width, height))
+            .filter(Boolean)
+            .sort((a, b) => b.area - a.area);
+          if (!faces.length || !isCurrent()) return false;
 
-          const face = faces.reduce((best, current) => {
-            const a = current.boundingBox.width * current.boundingBox.height;
-            const b = best.boundingBox.width * best.boundingBox.height;
-            return a > b ? current : best;
-          });
+          const upperGuide = canvasShell.querySelector('.guide-line.h1');
+          const upperGuideY = upperGuide && preview.clientHeight
+            ? upperGuide.offsetTop * SIZE / preview.clientHeight
+            : 32;
+          const placement = calculatePlacement(faces[0], width, height, upperGuideY);
+          if (!Number.isFinite(placement.scale) || placement.scale <= 0) return false;
 
-          const b = face.boundingBox;
-          const fitScale = Math.min((TARGET.w * 0.82) / b.width, (TARGET.h * 0.82) / b.height);
-          const coverScale = Math.max(SIZE / image.naturalWidth, SIZE / image.naturalHeight);
-          baseScale = Math.max(fitScale, coverScale);
+          baseScale = placement.scale;
           zoomFactor = 1;
-
-          const faceCenterX = (b.x + b.width / 2) * fitScale;
-          const faceCenterY = (b.y + b.height / 2) * fitScale;
-          const scaledW = image.naturalWidth * fitScale;
-          const scaledH = image.naturalHeight * fitScale;
-          const imageOriginX = (SIZE - scaledW) / 2;
-          const imageOriginY = (SIZE - scaledH) / 2;
-          const targetCenterX = TARGET.x + TARGET.w / 2;
-          const targetCenterY = TARGET.y + TARGET.h / 2;
-
-          offsetX = targetCenterX - (imageOriginX + faceCenterX);
-          offsetY = targetCenterY - (imageOriginY + faceCenterY);
-
+          offsetX = placement.x;
+          offsetY = placement.y;
           updateZoomUI();
           render();
-          if (updateDefault) storeDefault();
+          storeDefault();
           return true;
         } catch (error) {
-          console.error(error);
+          // The cover crop remains available if the model or CDN cannot be loaded.
+          console.warn('MediaPipeによる自動配置を利用できませんでした。', error);
           return false;
         }
       }
 
       function move(dx, dy) {
         if (!image) return;
+        editRevision++;
         offsetX += dx;
         offsetY += dy;
         clampOffsets();
@@ -574,6 +642,7 @@
         if (!image) return;
         const clamped = Math.max(getMinimumZoom(), Math.min(10, next));
         if (Math.abs(clamped - zoomFactor) < 0.0001) return;
+        editRevision++;
 
         if (!anchor) {
           zoomFactor = clamped;
@@ -608,23 +677,25 @@
           return;
         }
 
+        const revision = ++loadRevision;
         if (imageUrl) URL.revokeObjectURL(imageUrl);
         imageUrl = URL.createObjectURL(file);
         const nextImage = new Image();
 
         nextImage.onload = async () => {
+          if (revision !== loadRevision) return;
           image = nextImage;
           emptyState.hidden = true;
           setControlsEnabled(true);
           setInitialCover();
 
-          const autoPlaced = await tryAutoPosition({ updateDefault: true });
-          if (!autoPlaced) storeDefault();
+          await tryAutoPosition(nextImage, revision, editRevision);
         };
 
         nextImage.onerror = (error) => {
+          if (revision !== loadRevision) return;
           console.error('画像を読み込めませんでした。', error);
-          setControlsEnabled(false);
+          setControlsEnabled(Boolean(image));
         };
 
         nextImage.src = imageUrl;
@@ -672,7 +743,7 @@
       });
 
       zoom.addEventListener('input', () => setZoom(Number(zoom.value) / 100));
-      resetPosition.addEventListener('click', () => { offsetX = defaultState?.offsetX ?? 0; offsetY = defaultState?.offsetY ?? 0; render(); });
+      resetPosition.addEventListener('click', () => { editRevision++; offsetX = defaultState?.offsetX ?? 0; offsetY = defaultState?.offsetY ?? 0; render(); });
       moveUp.addEventListener('click', () => move(0, -MOVE_STEP));
       moveDown.addEventListener('click', () => move(0, MOVE_STEP));
       moveLeft.addEventListener('click', () => move(-MOVE_STEP, 0));
@@ -691,6 +762,7 @@
 
       canvasShell.addEventListener('pointerdown', (event) => {
         if (!image) return;
+        editRevision++;
         canvasShell.setPointerCapture(event.pointerId);
         pointers.set(event.pointerId, canvasPointFromEvent(event));
         canvasShell.classList.add('dragging');
@@ -712,6 +784,7 @@
 
       canvasShell.addEventListener('pointermove', (event) => {
         if (!pointers.has(event.pointerId) || !image) return;
+        editRevision++;
         pointers.set(event.pointerId, canvasPointFromEvent(event));
 
         if (pointers.size === 1 && event.pointerId === activePointer && dragStart) {
@@ -751,6 +824,7 @@
 
       download.addEventListener('click', () => {
         if (!image) return;
+        editRevision++;
         render();
         preview.toBlob((blob) => {
           if (!blob) {
