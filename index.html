@@ -137,10 +137,15 @@
       font-weight: var(--font-weight-action);
     }
     .jbsui .field + .field { margin-top: var(--space-8); }
-    .jbsui .file-picker { position: relative; }
-    .file-picker:has(input:focus-visible) {
-      outline: var(--width-focus-ring) solid var(--color-60);
-      outline-offset: var(--width-focus-ring);
+    .file-picker {
+      display: grid;
+      justify-items: start;
+      gap: var(--space-8);
+      min-width: 0;
+    }
+    .jbsui .file-picker .jbsui-file-status {
+      max-width: 100%;
+      padding: 0;
     }
     .filename {
       margin-top: var(--space-8);
@@ -200,9 +205,9 @@
       <aside class="control-panel">
         <section class="section">
           <h2 class="section-title">1. 元写真アップロード</h2>
-          <div class="file-picker jbsui-file-picker">
-            <input class="jbsui-file-input" id="fileInput" type="file" accept="image/*" aria-label="元写真を選択">
-            <label class="jbsui-file-button" for="fileInput">ファイル選択</label>
+          <div class="file-picker">
+            <input id="fileInput" type="file" accept="image/*" hidden>
+            <button class="jbsui-button" id="fileSelectButton" type="button">ファイル選択</button>
             <span class="jbsui-file-status" id="fileStatus">未選択</span>
           </div>
         </section>
@@ -229,11 +234,11 @@
           <h2 class="section-title">3. 顔写真出力</h2>
           <div class="field jbsui-field">
             <label for="nameJa">日本語名</label>
-            <input id="nameJa" type="text" placeholder="柳 暢祐" autocomplete="off">
+            <input id="nameJa" type="text" autocomplete="off">
           </div>
           <div class="field jbsui-field">
             <label for="nameEn">英語名</label>
-            <input id="nameEn" type="text" placeholder="YANAGI Nobusuke" autocomplete="off">
+            <input id="nameEn" type="text" autocomplete="off">
           </div>
           <div class="filename" id="filenamePreview">未入力.png</div>
           <button class="jbsui-button jbsui-button--primary jbsui-button--primary-action" id="download" type="button" disabled>512×512 PNG出力</button>
@@ -624,6 +629,8 @@
 
         nextImage.src = imageUrl;
       }
+
+      document.getElementById('fileSelectButton').addEventListener('click', () => fileInput.click());
 
       fileInput.addEventListener('change', () => {
         memberSelect.value = '';
