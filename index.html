@@ -91,6 +91,17 @@
       box-shadow: inset 0 0 0 var(--width-focus-ring) color-mix(in srgb, var(--color-pink) 12%, transparent);
     }
     canvas { display: block; width: 100%; height: 100%; }
+    .reference-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.1;
+      pointer-events: none;
+      user-select: none;
+    }
+    .reference-layer[hidden] { display: none; }
     .empty-state {
       position: absolute;
       inset: 0;
@@ -272,6 +283,7 @@
                     右のエリアへ画像を直接ドラッグ＆ドロップできます。
                   </div>
                 </div>
+                <img class="reference-layer" id="referenceLayer" alt="" aria-hidden="true" hidden>
                 <div class="guide" id="guide" aria-hidden="true">
                   <span class="guide-line vertical v1"></span>
                   <span class="guide-line vertical v2"></span>
@@ -303,6 +315,7 @@
       const ctx = preview.getContext('2d', { alpha: true });
       const canvasShell = document.getElementById('canvasShell');
       const emptyState = document.getElementById('emptyState');
+      const referenceLayer = document.getElementById('referenceLayer');
       const fileInput = document.getElementById('fileInput');
       const fileStatus = document.getElementById('fileStatus');
       const zoom = document.getElementById('zoom');
@@ -334,6 +347,7 @@
 
       let landmarkerPromise = null;
       let loadRevision = 0;
+      let referenceRevision = 0;
       let editRevision = 0;
 
       function reportAutoPosition(state, details = {}) {
@@ -450,38 +464,29 @@
         }
       }
 
-      function loadMemberImage(member) {
-        if (!member?.photo) return;
-        const revision = ++loadRevision;
+      function clearReference() {
+        referenceLayer.hidden = true;
+        referenceLayer.removeAttribute('src');
+        emptyState.hidden = Boolean(image);
+      }
 
-        if (imageUrl) {
-          URL.revokeObjectURL(imageUrl);
-          imageUrl = null;
-        }
+      function loadReferenceImage(member) {
+        const revision = ++referenceRevision;
+        clearReference();
+        if (!member?.photo) return;
 
         const nextImage = new Image();
-
         nextImage.onload = () => {
-          if (revision !== loadRevision) return;
-          image = nextImage;
+          if (revision !== referenceRevision) return;
+          referenceLayer.src = nextImage.src;
+          referenceLayer.hidden = false;
           emptyState.hidden = true;
-          setControlsEnabled(true);
-          setInitialCover();
-          storeDefault();
-
-          nameJa.value = member.name || '';
-          nameEn.value = member.nameEn || '';
-          buildFilename();
-
-          fileInput.value = '';
-          fileStatus.textContent = '未選択';
-          reportAutoPosition('reference');
         };
-
         nextImage.onerror = (error) => {
-          if (revision === loadRevision) console.error('選手写真を読み込めませんでした。', error);
+          if (revision !== referenceRevision) return;
+          clearReference();
+          console.error('参考写真を読み込めませんでした。', error);
         };
-
         nextImage.src = memberAssetUrl(member.photo);
       }
 
@@ -768,15 +773,12 @@
       document.getElementById('fileSelectButton').addEventListener('click', () => fileInput.click());
 
       fileInput.addEventListener('change', () => {
-        memberSelect.value = '';
         loadImageFile(fileInput.files?.[0]);
       });
 
       memberSelect.addEventListener('change', () => {
-        if (!memberSelect.value) return;
-
         try {
-          loadMemberImage(JSON.parse(memberSelect.value));
+          loadReferenceImage(memberSelect.value ? JSON.parse(memberSelect.value) : null);
         } catch (error) {
           console.error(error);
         }
@@ -802,7 +804,6 @@
       canvasShell.addEventListener('drop', (event) => {
         const file = event.dataTransfer?.files?.[0];
         if (file) fileInput.value = '';
-        memberSelect.value = '';
         loadImageFile(file);
       });
 
