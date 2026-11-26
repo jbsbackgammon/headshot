@@ -811,6 +811,7 @@
 
       memberSelect.addEventListener('change', () => {
         try {
+          referenceVisible.checked = Boolean(memberSelect.value);
           loadReferenceImage(memberSelect.value ? JSON.parse(memberSelect.value) : null);
         } catch (error) {
           console.error(error);
