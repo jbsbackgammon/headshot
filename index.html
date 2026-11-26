@@ -183,16 +183,6 @@
     .pad button:nth-child(5) { grid-column: 2; grid-row: 3; }
     #download { width: 100%; margin-top: var(--space-8); }
 
-    .status {
-      margin-top: var(--space-4);
-      color: var(--color-45);
-      font-size: var(--font-size-12);
-      line-height: 1.55;
-      overflow-wrap: anywhere;
-    }
-    .status:empty { display: none; }
-    .status.error { color: #b42318; }
-
     @media (max-width: 820px) {
       .app { width: min(calc(100% - 2 * var(--space-12)), 680px); padding-top: var(--space-16); }
       .workspace { grid-template-columns: minmax(0, 1fr); }
@@ -215,15 +205,13 @@
             <label class="jbsui-file-button" for="fileInput">ファイル選択</label>
             <span class="jbsui-file-status" id="fileStatus">未選択</span>
           </div>
-          <div class="status" id="status" aria-live="polite"></div>
         </section>
 
         <section class="section adjust-section">
           <h2 class="section-title">2. 位置・大きさ調整</h2>
           <div class="field jbsui-field">
-            <label for="zoom">拡大縮小</label>
             <div class="zoom-row">
-              <input id="zoom" type="range" min="50" max="1000" value="100" step="1" disabled>
+              <input id="zoom" aria-label="拡大縮小" type="range" min="50" max="1000" value="100" step="1" disabled>
               <span class="zoom-value" id="zoomValue">100%</span>
             </div>
           </div>
@@ -317,7 +305,6 @@
       const filenamePreview = document.getElementById('filenamePreview');
       const download = document.getElementById('download');
       const memberSelect = document.getElementById('memberSelect');
-      const status = document.getElementById('status');
 
       const MEMBER_DATA_URL = '/member/data/members.json';
 
@@ -334,11 +321,6 @@
       const pointers = new Map();
 
       const hasFaceDetector = 'FaceDetector' in window;
-
-      function setStatus(message, isError = false) {
-        status.textContent = message;
-        status.classList.toggle('error', isError);
-      }
 
       function sanitizePart(value) {
         return value
@@ -436,11 +418,10 @@
 
           fileInput.value = '';
           fileStatus.textContent = '未選択';
-          setStatus('');
         };
 
-        nextImage.onerror = () => {
-          setStatus('選手写真を読み込めませんでした。', true);
+        nextImage.onerror = (error) => {
+          console.error('選手写真を読み込めませんでした。', error);
         };
 
         nextImage.src = memberAssetUrl(member.photo);
@@ -530,19 +511,15 @@
         render();
       }
 
-      async function tryAutoPosition({ silent = false, updateDefault = false } = {}) {
+      async function tryAutoPosition({ updateDefault = false } = {}) {
         if (!image || !hasFaceDetector) {
-          if (!silent) setStatus('このブラウザでは顔の自動配置を利用できません。手動で調整してください。');
           return false;
         }
 
         try {
-          setStatus('顔を検出しています…');
           const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 8 });
           const faces = await detector.detect(image);
           if (!faces.length) {
-            if (!silent) setStatus('顔を検出できませんでした。手動で調整してください。');
-            else setStatus('写真を読み込みました。位置と大きさを調整してください。');
             return false;
           }
 
@@ -573,12 +550,9 @@
           updateZoomUI();
           render();
           if (updateDefault) storeDefault();
-          setStatus('顔を自動配置しました。必要に応じて微調整してください。');
           return true;
         } catch (error) {
           console.error(error);
-          if (!silent) setStatus('顔の自動配置に失敗しました。手動で調整してください。', true);
-          else setStatus('写真を読み込みました。位置と大きさを調整してください。');
           return false;
         }
       }
@@ -626,7 +600,6 @@
         if (!file) return;
         fileStatus.textContent = file.name;
         if (file.type && !file.type.startsWith('image/')) {
-          setStatus('画像ファイルを選択してください。', true);
           return;
         }
 
@@ -640,12 +613,12 @@
           setControlsEnabled(true);
           setInitialCover();
 
-          const autoPlaced = await tryAutoPosition({ silent: true, updateDefault: true });
+          const autoPlaced = await tryAutoPosition({ updateDefault: true });
           if (!autoPlaced) storeDefault();
         };
 
-        nextImage.onerror = () => {
-          setStatus('画像を読み込めませんでした。別の画像をお試しください。', true);
+        nextImage.onerror = (error) => {
+          console.error('画像を読み込めませんでした。', error);
           setControlsEnabled(false);
         };
 
@@ -664,7 +637,6 @@
           loadMemberImage(JSON.parse(memberSelect.value));
         } catch (error) {
           console.error(error);
-          setStatus('選手写真の読込に失敗しました。', true);
         }
       });
 
@@ -775,7 +747,7 @@
         render();
         preview.toBlob((blob) => {
           if (!blob) {
-            setStatus('PNGの生成に失敗しました。', true);
+            console.error('PNGの生成に失敗しました。');
             return;
           }
           const link = document.createElement('a');
@@ -786,7 +758,6 @@
           link.click();
           link.remove();
           setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-          setStatus('512×512pxのPNGを書き出しました。');
         }, 'image/png');
       });
 
