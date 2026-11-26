@@ -295,6 +295,8 @@
       const MOVE_STEP = 4;
       const MEDIAPIPE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
       const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+      const LOCAL_VISION = new URL('./assets/mediapipe/', document.baseURI).href.replace(/\/$/, '');
+      const LOCAL_MODEL = LOCAL_VISION + '/face_landmarker.task';
       const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
       const preview = document.getElementById('preview');
@@ -334,20 +336,39 @@
       let loadRevision = 0;
       let editRevision = 0;
 
+      function reportAutoPosition(state, details = {}) {
+        canvasShell.dataset.autoPosition = state;
+        console.info('[headshot] 自動配置:', state, details);
+      }
+
+      async function createLandmarker(base, model) {
+        const { FilesetResolver, FaceLandmarker } = await import(base + '/vision_bundle.mjs');
+        const vision = await FilesetResolver.forVisionTasks(base + '/wasm');
+        return FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: model, delegate: 'CPU' },
+          runningMode: 'IMAGE',
+          numFaces: 8,
+          minFaceDetectionConfidence: 0.4,
+          minFacePresenceConfidence: 0.4,
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: false
+        });
+      }
+
       function getLandmarker() {
         if (!landmarkerPromise) {
           landmarkerPromise = (async () => {
-            const { FilesetResolver, FaceLandmarker } = await import(MEDIAPIPE_CDN + '/vision_bundle.mjs');
-            const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_CDN + '/wasm');
-            return FaceLandmarker.createFromOptions(vision, {
-              baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'CPU' },
-              runningMode: 'IMAGE',
-              numFaces: 8,
-              minFaceDetectionConfidence: 0.5,
-              minFacePresenceConfidence: 0.5,
-              outputFaceBlendshapes: false,
-              outputFacialTransformationMatrixes: false
-            });
+            // Prefer deployment-bundled assets. The original CDN remains a fallback.
+            try {
+              const detector = await createLandmarker(LOCAL_VISION, LOCAL_MODEL);
+              console.info('[headshot] MediaPipe ready (same origin)');
+              return detector;
+            } catch (error) {
+              console.warn('[headshot] Local MediaPipe unavailable; trying CDN.', error);
+              const detector = await createLandmarker(MEDIAPIPE_CDN, FACE_MODEL);
+              console.info('[headshot] MediaPipe ready (CDN)');
+              return detector;
+            }
           })().catch(error => {
             landmarkerPromise = null;
             throw error;
@@ -454,6 +475,7 @@
 
           fileInput.value = '';
           fileStatus.textContent = '未選択';
+          reportAutoPosition('reference');
         };
 
         nextImage.onerror = (error) => {
@@ -549,14 +571,36 @@
 
       // Coordinates returned by the model are normalized to the input image.
       // Detect on a bounded-size copy; keep the original for full-quality output.
-      function detectionInput(source) {
-        const ratio = Math.min(1, 1600 / Math.max(source.naturalWidth, source.naturalHeight));
-        if (ratio === 1) return source;
+      function detectionInput(source, region) {
+        const ratio = Math.min(1, 1600 / Math.max(region.w, region.h));
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(source.naturalWidth * ratio));
-        canvas.height = Math.max(1, Math.round(source.naturalHeight * ratio));
-        canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+        canvas.width = Math.max(1, Math.round(region.w * ratio));
+        canvas.height = Math.max(1, Math.round(region.h * ratio));
+        const context = canvas.getContext('2d', { alpha: false });
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(source, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
         return canvas;
+      }
+
+      function detectFaces(detector, source) {
+        const w = source.naturalWidth, h = source.naturalHeight;
+        function detectRegion(region) {
+          const result = detector.detect(detectionInput(source, region));
+          return (result.faceLandmarks || []).map(points => faceGeometry(points.map(p => ({
+            x: (region.x + p.x * region.w) / w,
+            y: (region.y + p.y * region.h) / h
+          })), w, h)).filter(Boolean);
+        }
+        const full = detectRegion({ x: 0, y: 0, w, h });
+        if (full.length) return full;
+        // Retry overlapping regions when faces are too small in the full photo.
+        const rw = Math.round(w * 0.65), rh = Math.round(h * 0.65);
+        const regions = [
+          { x: Math.round((w-rw)/2), y: Math.round((h-rh)/2), w: rw, h: rh },
+          ...[0, h-rh].flatMap(y => [0, w-rw].map(x => ({ x, y, w: rw, h: rh })))
+        ];
+        return regions.flatMap(detectRegion);
       }
 
       function faceGeometry(points, width, height) {
@@ -586,7 +630,15 @@
         const coverScale = Math.max(SIZE / width, SIZE / height);
         const widthScale = (SIZE * 0.5) / face.width;
         const heightScale = (chinY - upperGuideY) / (face.chin - face.crown);
-        const scale = Math.max(coverScale, Math.min(widthScale, heightScale));
+        const preferredScale = Math.max(coverScale, Math.min(widthScale, heightScale));
+        // Increase slightly if needed to align the face without exposing blank pixels.
+        const alignmentScale = Math.max(
+          SIZE / 2 / Math.max(1, face.centerX),
+          SIZE / 2 / Math.max(1, width - face.centerX),
+          chinY / Math.max(1, face.chin),
+          (SIZE - chinY) / Math.max(1, height - face.chin)
+        );
+        const scale = Math.max(preferredScale, Math.min(alignmentScale, heightScale, preferredScale * 1.15));
         const w = width * scale;
         const h = height * scale;
         return {
@@ -600,22 +652,28 @@
         const isCurrent = () => image === source && loadRevision === revision && editRevision === edits;
         try {
           const detector = await getLandmarker();
-          if (!isCurrent()) return false;
-          const result = detector.detect(detectionInput(source));
+          if (!isCurrent()) {
+            if (image === source && loadRevision === revision) reportAutoPosition('manual');
+            return false;
+          }
           const width = source.naturalWidth;
           const height = source.naturalHeight;
-          const faces = (result.faceLandmarks || [])
-            .map(points => faceGeometry(points, width, height))
-            .filter(Boolean)
-            .sort((a, b) => b.area - a.area);
-          if (!faces.length || !isCurrent()) return false;
+          const faces = detectFaces(detector, source).sort((a, b) => b.area - a.area);
+          if (!isCurrent()) return false;
+          if (!faces.length) {
+            reportAutoPosition('no-face');
+            return false;
+          }
 
           const upperGuide = canvasShell.querySelector('.guide-line.h1');
           const upperGuideY = upperGuide && preview.clientHeight
             ? upperGuide.offsetTop * SIZE / preview.clientHeight
             : 32;
           const placement = calculatePlacement(faces[0], width, height, upperGuideY);
-          if (!Number.isFinite(placement.scale) || placement.scale <= 0) return false;
+          if (!Object.values(placement).every(Number.isFinite) || placement.scale <= 0) {
+            reportAutoPosition('invalid-placement');
+            return false;
+          }
 
           baseScale = placement.scale;
           zoomFactor = 1;
@@ -624,9 +682,11 @@
           updateZoomUI();
           render();
           storeDefault();
+          reportAutoPosition('applied', { faces: faces.length, scale: placement.scale, offsetX, offsetY });
           return true;
         } catch (error) {
           // The cover crop remains available if the model or CDN cannot be loaded.
+          if (isCurrent()) reportAutoPosition('error');
           console.warn('MediaPipeによる自動配置を利用できませんでした。', error);
           return false;
         }
@@ -692,6 +752,7 @@
           setControlsEnabled(true);
           setInitialCover();
 
+          reportAutoPosition('detecting');
           await tryAutoPosition(nextImage, revision, editRevision);
         };
 
@@ -852,6 +913,8 @@
       document.addEventListener('pointerdown', () => document.documentElement.removeAttribute('data-jbsui-keyboard-focus'));
       setControlsEnabled(false);
       loadMemberList();
+      // Warm up while the user is choosing a file, not after the first upload.
+      getLandmarker().catch(error => console.warn('[headshot] MediaPipe preload failed.', error));
     })();
   </script>
 </body>
