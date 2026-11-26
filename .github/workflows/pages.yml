@@ -25,6 +25,87 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Prepare pinned MediaPipe assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p assets/mediapipe
+          npm pack @mediapipe/tasks-vision@0.10.32 --silent --pack-destination "$RUNNER_TEMP"
+          tar -xzf "$RUNNER_TEMP/mediapipe-tasks-vision-0.10.32.tgz" --strip-components=1 -C assets/mediapipe
+          curl --fail --location --retry 3 --connect-timeout 20 \
+            https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task \
+            -o assets/mediapipe/face_landmarker.task
+          test -s assets/mediapipe/vision_bundle.mjs
+          test -s assets/mediapipe/face_landmarker.task
+          test -d assets/mediapipe/wasm
+
+      - name: Test automatic placement in Chromium
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_dir="$RUNNER_TEMP/headshot-test"
+          mkdir -p "$test_dir"
+          npm install --prefix "$test_dir" --no-save playwright@1.56.1
+          "$test_dir/node_modules/.bin/playwright" install --with-deps chromium
+          curl --fail --location --retry 3 --connect-timeout 20 \
+            https://storage.googleapis.com/mediapipe-assets/portrait.jpg \
+            -o "$test_dir/portrait.jpg"
+          python3 -m http.server 8765 --bind 127.0.0.1 > "$test_dir/server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8765/ >/dev/null; then break; fi
+            sleep 1
+          done
+          NODE_PATH="$test_dir/node_modules" TEST_IMAGE="$test_dir/portrait.jpg" node <<'NODE'
+          const { chromium } = require('playwright');
+          const assert = require('node:assert/strict');
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true,
+              args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+            });
+            try {
+              const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+              page.on('console', msg => console.log('browser:', msg.text()));
+              page.on('pageerror', error => console.error('page error:', error));
+              // The deployed assets must work without access to third-party hosts.
+              await page.route('**/*', route => route.request().url().startsWith('http://127.0.0.1:8765/')
+                ? route.continue() : route.abort());
+              await page.goto('http://127.0.0.1:8765/');
+              await page.locator('#fileInput').setInputFiles(process.env.TEST_IMAGE);
+              await page.waitForFunction(() => ['applied', 'no-face', 'error', 'invalid-placement'].includes(
+                document.getElementById('canvasShell').dataset.autoPosition), null, { timeout: 90000 });
+              assert.equal(await page.locator('#canvasShell').getAttribute('data-auto-position'), 'applied');
+              assert.equal(await page.locator('#download').isEnabled(), true);
+              const image = await page.locator('#preview').evaluate(canvas => ({
+                width: canvas.width, height: canvas.height,
+                alpha: canvas.getContext('2d').getImageData(256, 256, 1, 1).data[3]
+              }));
+              assert.deepEqual(image, { width: 512, height: 512, alpha: 255 });
+              const blank = await page.evaluate(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, 512, 512);
+                return canvas.toDataURL().split(',')[1];
+              });
+              await page.locator('#fileInput').setInputFiles({
+                name: 'blank.png', mimeType: 'image/png', buffer: Buffer.from(blank, 'base64')
+              });
+              await page.waitForFunction(() => ['no-face', 'error', 'invalid-placement'].includes(
+                document.getElementById('canvasShell').dataset.autoPosition), null, { timeout: 90000 });
+              assert.equal(await page.locator('#canvasShell').getAttribute('data-auto-position'), 'no-face');
+              assert.equal(await page.locator('#download').isEnabled(), true);
+              console.log('PASS: real portrait auto placement and no-face manual fallback');
+            } finally {
+              await browser.close();
+            }
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
+
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
